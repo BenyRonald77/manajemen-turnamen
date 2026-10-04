@@ -54,6 +54,7 @@ model Match {
   mulaiAt          String? // "YYYY-MM-DD HH:MM"
   durasiMenit      Int        @default(60)
   mvpPlayerId      Int?
+  isBye            Boolean  @default(false) // bye struktural: hanya satu feed tim
   nextMatchId      Int? // pertandingan lanjutan bagi PEMENANG
   nextSlot         String? // home | away
   loserNextMatchId Int? // pertandingan lanjutan bagi yang KALAH (double elimination)
