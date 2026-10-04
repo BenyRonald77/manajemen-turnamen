@@ -55,6 +55,7 @@ model Match {
   durasiMenit      Int        @default(60)
   mvpPlayerId      Int?
   isBye            Boolean  @default(false) // bye struktural: hanya satu feed tim
+  urutan           Int      @default(0) // urutan babak untuk tampilan bracket
   nextMatchId      Int? // pertandingan lanjutan bagi PEMENANG
   nextSlot         String? // home | away
   loserNextMatchId Int? // pertandingan lanjutan bagi yang KALAH (double elimination)

@@ -1,3 +1,4 @@
+import type { Match } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 // Menentukan pemenang dari skor. Draw hanya valid di round robin.
@@ -44,17 +45,21 @@ async function tulisSlot(
 // Setelah sebuah tim masuk ke slot sebuah pertandingan, bila pertandingan itu
 // adalah bye struktural (isBye) maka tim langsung diteruskan lagi ke babak
 // berikutnya, berantai.
+async function ambilMatch(id: number): Promise<Match | null> {
+  return prisma.match.findUnique({ where: { id } });
+}
+
 export async function teruskanByeBerantai(matchId: number): Promise<void> {
   let guard = 0;
-  let cur: number | null = matchId;
-  while (cur !== null && guard++ < 20) {
-    const m = await prisma.match.findUnique({ where: { id: cur } });
-    if (!m || !m.isBye || m.status === "selesai") break;
-    const teamId = m.homeTeamId ?? m.awayTeamId;
-    if (teamId === null || !m.nextMatchId || !m.nextSlot) break;
-    await tulisSlot(m.nextMatchId, m.nextSlot as Slot, teamId, null);
-    await prisma.match.update({ where: { id: cur }, data: { status: "selesai" } });
-    cur = m.nextMatchId;
+  let curId: number | null = matchId;
+  while (curId !== null && guard++ < 20) {
+    const row: Match | null = await ambilMatch(curId);
+    if (!row || !row.isBye || row.status === "selesai") break;
+    const teamId = row.homeTeamId ?? row.awayTeamId;
+    if (teamId === null || !row.nextMatchId || !row.nextSlot) break;
+    await tulisSlot(row.nextMatchId, row.nextSlot as Slot, teamId, null);
+    await prisma.match.update({ where: { id: curId }, data: { status: "selesai" } });
+    curId = row.nextMatchId;
   }
 }
 

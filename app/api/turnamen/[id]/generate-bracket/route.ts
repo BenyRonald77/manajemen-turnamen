@@ -46,6 +46,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
         homeTeamId: slot.home,
         awayTeamId: slot.away,
         isBye,
+        urutan: s.roundIdx,
         status: isBye ? "selesai" : "terjadwal",
         nextMatchId: s.nextKey ? ids.get(s.nextKey) ?? null : null,
         nextSlot: s.nextSlot,

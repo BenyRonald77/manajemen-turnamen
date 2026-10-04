@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!t) return NextResponse.json({ error: "Turnamen tidak ditemukan" }, { status: 404 });
   const matches = await prisma.match.findMany({
     where: { tournamentId },
-    orderBy: { id: "asc" },
+    orderBy: [{ urutan: "asc" }, { id: "asc" }],
   });
   const teams = await prisma.team.findMany({ where: { tournamentId } });
   const teamMap = new Map(teams.map((x) => [x.id, x.nama]));
