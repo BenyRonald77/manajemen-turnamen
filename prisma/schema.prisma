@@ -1,0 +1,76 @@
+// Schema database Manajemen Turnamen.
+// Waktu disimpan sebagai TEXT "YYYY-MM-DD HH:MM" (tanpa drama timezone).
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tournament {
+  id        Int      @id @default(autoincrement())
+  nama      String
+  jenis     String   // futsal | e-sport
+  format    String   // single | double | roundrobin
+  status    String   @default("draft") // draft | berjalan | selesai
+  createdAt DateTime @default(now())
+  teams     Team[]
+  matches   Match[]
+}
+
+model Team {
+  id           Int        @id @default(autoincrement())
+  tournamentId Int
+  nama         String
+  seed         Int        @default(0) // 1 = unggulan teratas
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  players      Player[]
+}
+
+model Player {
+  id     Int    @id @default(autoincrement())
+  teamId Int
+  nama   String
+  nomor  Int    @default(0)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  stats  PlayerStat[]
+}
+
+model Match {
+  id               Int        @id @default(autoincrement())
+  tournamentId     Int
+  kode             String // mis. "QF1", "SF2", "FINAL", "UB1-M1", "LB2-M3", "P3-M2"
+  babak            String // label: "Perempat Final", "Pekan 3", ...
+  bracket          String     @default("main") // main | upper | lower | roundrobin
+  homeTeamId       Int?
+  awayTeamId       Int?
+  homeScore        Int?
+  awayScore        Int?
+  status           String     @default("terjadwal") // terjadwal | selesai
+  lapangan         String?
+  mulaiAt          String? // "YYYY-MM-DD HH:MM"
+  durasiMenit      Int        @default(60)
+  mvpPlayerId      Int?
+  nextMatchId      Int? // pertandingan lanjutan bagi PEMENANG
+  nextSlot         String? // home | away
+  loserNextMatchId Int? // pertandingan lanjutan bagi yang KALAH (double elimination)
+  loserSlot        String? // home | away
+  tournament       Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  stats            PlayerStat[]
+}
+
+model PlayerStat {
+  id       Int    @id @default(autoincrement())
+  matchId  Int
+  playerId Int
+  gol      Int    @default(0)
+  kuning   Int    @default(0)
+  merah    Int    @default(0)
+  match    Match  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player   Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId])
+}
