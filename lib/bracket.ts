@@ -41,16 +41,32 @@ const namaBabakEliminasi = (matchCount: number, dariAkhir: number): string => {
   return `Babak ${matchCount * 2} Besar`;
 };
 
+// Urutan seed standar bracket: seeds(2)=[1,2], seeds(2n) = interleave
+// seeds(n) dengan (2n+1-s). Contoh size 8: [1,8,4,5,2,7,3,6] -> bye tersebar.
+function urutanSeed(size: number): number[] {
+  let arr = [1, 2];
+  while (arr.length < size) {
+    const n = arr.length * 2;
+    const next: number[] = [];
+    for (const s of arr) {
+      next.push(s, n + 1 - s);
+    }
+    arr = next;
+  }
+  return arr;
+}
+
 // Pasangan ronde pertama single elimination dengan bye untuk unggulan teratas:
-// seed 1 vs seed terakhir, dst. Bila bukan power of 2, slot kosong (null) = bye.
+// bye jatuh di slot seed terbawah sehingga tersebar merata di bracket.
 function pasanganRondePertama(teams: TeamSeed[]): (TeamSeed | null)[][] {
   const sorted = [...teams].sort((a, b) => a.seed - b.seed || a.id - b.id);
   const size = nextPow2(sorted.length);
-  const slots: (TeamSeed | null)[] = [...sorted];
-  while (slots.length < size) slots.push(null);
+  const order = urutanSeed(size);
+  const bySeed = new Map(sorted.map((t, i) => [i + 1, t]));
+  const slots: (TeamSeed | null)[] = order.map((s) => bySeed.get(s) ?? null);
   const pairs: (TeamSeed | null)[][] = [];
-  for (let i = 0; i < size / 2; i++) {
-    pairs.push([slots[i], slots[size - 1 - i]]);
+  for (let i = 0; i < size; i += 2) {
+    pairs.push([slots[i], slots[i + 1]]);
   }
   return pairs;
 }
@@ -122,8 +138,10 @@ function buildSingle(
   return { specs, slots };
 }
 
-// Propagasi bye: pertandingan yang hanya punya satu tim (lawan null) otomatis
-// meloloskan tim itu ke slot pertandingan berikutnya. Mengembalikan slot akhir.
+// Propagasi bye: HANYA untuk pertandingan bye struktural, yaitu tepat satu
+// sisi yang punya feed tim (sisi lain null permanen, bukan TBD). Kriteria
+// berbasis feed, bukan slot ter-resolved — karena slot null bisa berarti
+// "menunggu pemenang babak sebelumnya" yang tidak boleh dilewati.
 function propagateByes(specs: MatchSpec[]): Map<string, { home: number | null; away: number | null }> {
   const slots = new Map<string, { home: number | null; away: number | null }>();
   for (const s of specs) {
@@ -138,15 +156,17 @@ function propagateByes(specs: MatchSpec[]): Map<string, { home: number | null; a
   while (changed && guard++ < 50) {
     changed = false;
     for (const s of byRound) {
+      if ((s.home === null) === (s.away === null)) continue; // bukan bye struktural
+      const fedSide = s.home !== null ? "home" : "away";
+      const otherSide = fedSide === "home" ? "away" : "home";
       const v = slots.get(s.key)!;
-      const exactlyOne = (v.home === null) !== (v.away === null);
-      if (exactlyOne && s.nextKey && s.nextSlot) {
-        const teamId = v.home ?? v.away!;
-        const target = slots.get(s.nextKey)!;
-        if (target[s.nextSlot] === null) {
-          target[s.nextSlot] = teamId;
-          changed = true;
-        }
+      if (v[otherSide] !== null) continue; // sisi lain terisi -> bukan bye
+      const teamId = v[fedSide];
+      if (teamId === null || !s.nextKey || !s.nextSlot) continue;
+      const target = slots.get(s.nextKey)!;
+      if (target[s.nextSlot] === null) {
+        target[s.nextSlot] = teamId;
+        changed = true;
       }
     }
   }
@@ -157,7 +177,6 @@ function buildDouble(teams: TeamSeed[]): Built {
   // Upper bracket
   const upper = buildSingle(teams, { bracket: "upper", prefix: "ub", roundOffset: 0, orderStart: 0 });
   const specs: MatchSpec[] = [...upper.specs];
-  let order = Math.max(...specs.map((s) => s.order)) + 1;
 
   // Kumpulkan key per ronde upper: r1..rR
   const upperRounds: string[][] = [];
@@ -173,23 +192,25 @@ function buildDouble(teams: TeamSeed[]): Built {
   const R = upperRounds.length;
   const upperFinalKey = upperRounds[R - 1][0];
 
+  // Kunci pertandingan bye di upper: pecundang dari bye tidak ada.
+  const byeKeys = new Set(
+    upper.specs.filter((s) => (s.home === null) !== (s.away === null)).map((s) => s.key)
+  );
+
   // Lower bracket: L1 = pecundang U1 dipasangkan;
   // Lk = pemenang L(k-1) + pecundang Uk; ronde terakhir lower juga menampung
   // pecundang final upper. Bye (ganjil) lolos otomatis ke ronde lower berikut.
   const lowerRounds: string[][] = [];
   let pending: SlotFeed[] = [];
-  // L1: semua pecundang U1
-  for (const key of upperRounds[0]) pending.push({ kind: "loser", key });
+  // L1: semua pecundang U1 (kecuali dari pertandingan bye)
+  for (const key of upperRounds[0])
+    if (!byeKeys.has(key)) pending.push({ kind: "loser", key });
   let roundIdx = R; // setelah semua ronde upper
   let lr = 1;
   let guard = 0;
   while (pending.length > 1 && guard++ < 2 * R + 5) {
-    // buang feed loser yang berasal dari bye upper (tidak ada tim kalah)
-    const feeds = pending.filter((f) => {
-      if (f.kind !== "loser") return true;
-      const v = upper.slots.get(f.key)!;
-      return v.home !== null && v.away !== null;
-    });
+    // Buang feed loser dari pertandingan bye upper (tidak ada tim yang kalah)
+    const feeds = pending.filter((f) => f.kind !== "loser" || !byeKeys.has(f.key));
     const keys: string[] = [];
     const n = feeds.length;
     const matchCount = Math.ceil(n / 2);
@@ -282,13 +303,17 @@ function buildDouble(teams: TeamSeed[]): Built {
     }
   }
 
-  // order pembuatan: GF dulu, lalu lower mundur, lalu upper (upper sudah punya order)
-  const lowerOrdered = [...lowerRounds].reverse().flat();
-  lowerOrdered.forEach((key, idx) => {
-    specs.find((s) => s.key === key)!.order = order + idx;
-  });
-  specs.find((s) => s.key === gfKey)!.order =
-    order + lowerOrdered.length;
+  // Urutan pembuatan di DB: target harus ada sebelum yang merujuk.
+  // GF dulu, lalu lower dari ronde terakhir mundur, lalu upper dari final mundur.
+  // (upper.loserNextKey menunjuk ke lower -> lower harus dibuat lebih dulu.)
+  {
+    let ord = 0;
+    const orderMap = new Map<string, number>();
+    orderMap.set(gfKey, ord++);
+    for (const keys of [...lowerRounds].reverse()) for (const k of keys) orderMap.set(k, ord++);
+    for (const keys of [...upperRounds].reverse()) for (const k of keys) orderMap.set(k, ord++);
+    for (const s of specs) s.order = orderMap.get(s.key)!;
+  }
 
   const slots = propagateByes(specs);
   return { specs, slots };

@@ -22,6 +22,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const body = await req.json().catch(() => null);
   const playerId = Number(body?.playerId);
+  if (!Number.isInteger(playerId) || playerId <= 0)
+    return NextResponse.json({ error: "playerId tidak valid" }, { status: 400 });
   const player = await prisma.player.findUnique({ where: { id: playerId } });
   if (!player) return NextResponse.json({ error: "Pemain tidak ditemukan" }, { status: 404 });
   if (player.teamId !== m.homeTeamId && player.teamId !== m.awayTeamId)
